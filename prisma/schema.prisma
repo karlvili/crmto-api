@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// section
+enum Role {
+  RM // Retention Manager
+  RA // Retention Agent
+  CM // Conversion Manager
+  CA // Conversion Agent
+}
+
+enum LeadStatus {
+  NEW          @map("New")
+  IN_PROGRESS  @map("In Progress")
+  CONTACTED    @map("Contacted")
+  QUALIFIED    @map("Qualified")
+  CLOSED       @map("Closed")
+}
+
+enum CallOutcome {
+  NO_ANSWER        @map("No Answer")
+  VOICEMAIL        @map("VoiceMail")
+  CALL_BACK        @map("Call Back")
+  NOT_INTERESTED   @map("Not Interested")
+  WRONG_NUMBER     @map("Wrong Number")
+  NOT_REACHABLE    @map("Not Reachable")
+  TRANSFERRED      @map("Transferred")
+  LANGUAGE_BARRIER @map("Language Barrier")
+}
+
+enum KycStatus {
+  PENDING   @map("Pending")
+  SUBMITTED @map("Submitted")
+  VERIFIED  @map("Verified")
+  REJECTED  @map("Rejected")
+}
+
+enum AccountType {
+  STANDARD @map("Standard")
+  GOLD     @map("Gold")
+  VIP      @map("VIP")
+  ISLAMIC  @map("Islamic")
+}
+
+enum TxKind {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum TxStatus {
+  PENDING  @map("Pending")
+  APPROVED @map("Approved")
+  REJECTED @map("Rejected")
+}
+
+enum PaymentMethod {
+  BANK_WIRE   @map("Bank Wire")
+  CREDIT_CARD @map("Credit Card")
+  CRYPTO_BTC  @map("Crypto BTC")
+  CRYPTO_USDT @map("Crypto USDT")
+  SKRILL      @map("Skrill")
+  NETELLER    @map("Neteller")
+}
+
+enum AffLeadStatus {
+  ACCEPTED  @map("Accepted")
+  DUPLICATE @map("Duplicate")
+  INVALID   @map("Invalid")
+}
+
+// section
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String   // bcrypt hash
+  name      String
+  role      Role     @default(CA)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  leads        Lead[]        @relation("LeadAssignee")
+  clients      Client[]      @relation("ClientAssignee")
+  decidedTxs   Transaction[] @relation("TxDecider")
+  requestedTxs Transaction[] @relation("TxRequester")
+  auditEntries AuditLog[]
+  leadComments LeadComment[]
+  clientNotes  ClientNote[]
+
+  @@map("users")
+}
+
+model Lead {
+  id          String       @id @default(cuid())
+  name        String
+  phone       String       @default("")
+  email       String       @default("")
+  country     String       @default("")
+  source      String       @default("Website")
+  status      LeadStatus   @default(NEW)
+  outcome     CallOutcome?
+  assignedTo  User?        @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  lastContact DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  comments      LeadComment[]
+  affiliateLead AffiliateLead? // back-link if lead came from a partner
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([phone])
+  @@map("leads")
+}
+
+model LeadComment {
+  id        String   @id @default(cuid())
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId    String
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId  String?
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@map("lead_comments")
+}
+
+model Client {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @default("")
+  phone        String      @default("")
+  country      String      @default("")
+  kyc          KycStatus   @default(PENDING)
+  accountType  AccountType @default(STANDARD)
+  balance      Decimal     @default(0) @db.Decimal(18, 2)
+  equity       Decimal     @default(0) @db.Decimal(18, 2)
+  assignedTo   User?       @relation("ClientAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  notes        ClientNote[]
+  transactions Transaction[]
+
+  @@index([assignedToId])
+  @@index([kyc])
+  @@map("clients")
+}
+
+model ClientNote {
+  id        String   @id @default(cuid())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId  String
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorId  String?
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@map("client_notes")
+}
+
+model Transaction {
+  id             String        @id @default(cuid())
+  kind           TxKind
+  client         Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  clientId       String
+  amount         Decimal       @db.Decimal(18, 2)
+  method         PaymentMethod
+  status         TxStatus      @default(PENDING)
+  note           String        @default("")
+  requestedBy    User?         @relation("TxRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedById  String?
+  requestedAt    DateTime      @default(now())
+  decidedBy      User?         @relation("TxDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedById    String?
+  decidedAt      DateTime?
+  idempotencyKey String?       @unique // prevents double-processing on retries
+
+  @@index([clientId])
+  @@index([kind, status])
+  @@map("transactions")
+}
+
+model Affiliate {
+  id         String   @id @default(cuid())
+  name       String
+  code       String   @unique
+  commission Int      @default(25) // percent
+  active     Boolean  @default(true)
+  apiKeyHash String   @unique // store SHA-256 hash, never the raw key
+  createdAt  DateTime @default(now())
+
+  leads AffiliateLead[]
+
+  @@map("affiliates")
+}
+
+model AffiliateLead {
+  id          String        @id @default(cuid())
+  affiliate   Affiliate     @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  affiliateId String
+  name        String
+  phone       String        @default("")
+  email       String        @default("")
+  country     String        @default("")
+  status      AffLeadStatus
+  // if ACCEPTED, the CRM lead that was created from this payload:
+  lead        Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  leadId      String?       @unique
+  rawPayload  Json? // original request body for debugging/compliance
+  receivedAt  DateTime      @default(now())
+
+  @@index([affiliateId])
+  @@index([status])
+  @@map("affiliate_leads")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorId   String?
+  actorName String   @default("") // denormalized so log survives user deletion
+  entity    String   @default("") // e.g. "transaction", "client"
+  entityId  String   @default("")
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
