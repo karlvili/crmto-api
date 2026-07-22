@@ -3,10 +3,12 @@ import { Request, Response } from 'express';
 import { AuthService, REFRESH_COOKIE } from './auth.service';
 import { Public } from './decorators';
 
+const isProd = process.env.NODE_ENV === 'production';
 const cookieOpts = {
   httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
+  // Cross-site cookies needed when web + API are on different DO domains
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+  secure: isProd,
   path: '/auth',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
