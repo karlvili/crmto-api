@@ -5,9 +5,17 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.use(cookieParser());
-  app.enableCors({ origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173', credentials: true });
+  const origins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: origins.length === 1 ? origins[0] : origins,
+    credentials: true,
+  });
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`Crmto API running on http://localhost:${port}`);
+  console.log(`CORS origins: ${origins.join(', ')}`);
 }
 bootstrap();
