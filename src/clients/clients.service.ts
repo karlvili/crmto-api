@@ -15,6 +15,36 @@ export class ClientsService {
     return { ...c, phone: full ? c.phone : maskPhone(c.phone), balance: toNum(c.balance), equity: toNum(c.equity) };
   }
 
+  async create(
+    actor: Actor,
+    body: { name?: string; email?: string; phone?: string; country?: string; kyc?: string; accountType?: string; assignedToId?: string },
+  ) {
+    if (!body?.name?.trim()) throw new BadRequestException('name required');
+    const client = await this.prisma.client.create({
+      data: {
+        name: body.name.trim(),
+        email: (body.email ?? '').trim(),
+        phone: (body.phone ?? '').trim(),
+        country: (body.country ?? '').trim(),
+        kyc: (toEnumName(body.kyc) as any) || 'PENDING',
+        accountType: (toEnumName(body.accountType) as any) || 'STANDARD',
+        assignedToId: body.assignedToId || actor.sub,
+      },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        notes: true,
+      },
+    });
+    void this.audit.log({
+      action: `Created client ${client.name}`,
+      actorId: actor.sub,
+      actorName: actor.name,
+      entity: 'client',
+      entityId: client.id,
+    });
+    return this.serialize(client, actor);
+  }
+
   async list(actor: Actor, q: { search?: string; kyc?: string }) {
     const kyc = toEnumName(q.kyc);
     const where: any = {

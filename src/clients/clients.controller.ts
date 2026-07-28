@@ -12,6 +12,11 @@ export class ClientsController {
     return this.clients.list(req.user, q);
   }
 
+  @Post()
+  create(@Req() req: any, @Body() body: any) {
+    return this.clients.create(req.user, body);
+  }
+
   @Patch(':id')
   @RequirePermission('editLeads')
   update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
