@@ -88,6 +88,7 @@ model User {
   clients      Client[]      @relation("ClientAssignee")
   decidedTxs   Transaction[] @relation("TxDecider")
   requestedTxs Transaction[] @relation("TxRequester")
+  broughtTxs   Transaction[] @relation("TxBroughtBy")
   auditEntries AuditLog[]
   leadComments LeadComment[]
   clientNotes  ClientNote[]
@@ -183,11 +184,32 @@ model Transaction {
   decidedBy      User?         @relation("TxDecider", fields: [decidedById], references: [id], onDelete: SetNull)
   decidedById    String?
   decidedAt      DateTime?
+  // Agent who brought the deposit (commission credited to their role tier)
+  broughtBy      User?         @relation("TxBroughtBy", fields: [broughtById], references: [id], onDelete: SetNull)
+  broughtById    String?
+  commissionPct  Decimal?      @db.Decimal(5, 2)  // snapshot at create time
+  commissionAmt  Decimal?      @db.Decimal(18, 2)
   idempotencyKey String?       @unique // prevents double-processing on retries
 
   @@index([clientId])
   @@index([kind, status])
+  @@index([broughtById])
   @@map("transactions")
+}
+
+// Per-role deposit commission tiers (percent by amount range)
+model CommissionTier {
+  id        String   @id @default(cuid())
+  role      Role
+  minAmount Decimal  @db.Decimal(18, 2) // inclusive
+  maxAmount Decimal? @db.Decimal(18, 2) // inclusive; null = no upper limit
+  percent   Decimal  @db.Decimal(5, 2)  // e.g. 5.00 = 5%
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role, active])
+  @@map("commission_tiers")
 }
 
 model Affiliate {

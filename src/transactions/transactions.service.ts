@@ -1,24 +1,34 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
+import { CommissionsService } from '../commissions/commissions.service';
 import { toEnumName, toNum } from '../common/util';
 
 type Actor = { sub: string; role: string; name?: string };
 
 @Injectable()
 export class TransactionsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly commissions: CommissionsService,
+  ) {}
 
   private serialize(t: any) {
     return {
       ...t,
       amount: toNum(t.amount),
+      commissionPct: t.commissionPct == null ? null : toNum(t.commissionPct),
+      commissionAmt: t.commissionAmt == null ? null : toNum(t.commissionAmt),
       clientName: t.client?.name,
       requestedByName: t.requestedBy?.name ?? null,
       decidedByName: t.decidedBy?.name ?? null,
+      broughtByName: t.broughtBy?.name ?? null,
+      broughtByRole: t.broughtBy?.role ?? null,
       client: undefined,
       requestedBy: undefined,
       decidedBy: undefined,
+      broughtBy: undefined,
     };
   }
 
@@ -26,6 +36,7 @@ export class TransactionsService {
     client: { select: { name: true } },
     requestedBy: { select: { name: true } },
     decidedBy: { select: { name: true } },
+    broughtBy: { select: { name: true, role: true } },
   };
 
   async list(q: { kind?: string; status?: string }) {
@@ -39,7 +50,17 @@ export class TransactionsService {
     return { items: items.map((t) => this.serialize(t)), total: items.length };
   }
 
-  async request(actor: Actor, body: { kind: string; clientId: string; amount: number; method: string; idempotencyKey?: string }) {
+  async request(
+    actor: Actor,
+    body: {
+      kind: string;
+      clientId: string;
+      amount: number;
+      method: string;
+      broughtById?: string;
+      idempotencyKey?: string;
+    },
+  ) {
     const kind = toEnumName(body.kind);
     const method = toEnumName(body.method);
     const amount = Number(body.amount);
@@ -48,15 +69,31 @@ export class TransactionsService {
     if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('amount must be > 0');
     if (amount > 10_000_000) throw new BadRequestException('amount exceeds limit');
 
-    /* Idempotency: same key returns the original transaction instead of double-creating */
     if (body.idempotencyKey) {
-      const existing = await this.prisma.transaction.findUnique({ where: { idempotencyKey: body.idempotencyKey }, include: this.include });
+      const existing = await this.prisma.transaction.findUnique({
+        where: { idempotencyKey: body.idempotencyKey },
+        include: this.include,
+      });
       if (existing) return this.serialize(existing);
     }
 
     const client = await this.prisma.client.findUnique({ where: { id: body.clientId } });
     if (!client) throw new NotFoundException('Client not found');
     if (kind === 'WITHDRAWAL' && toNum(client.balance) < amount) throw new BadRequestException('Insufficient balance');
+
+    let broughtById: string | null = null;
+    let commissionPct: number | null = null;
+    let commissionAmt: number | null = null;
+
+    if (kind === 'DEPOSIT') {
+      if (!body.broughtById) throw new BadRequestException('broughtById required for deposits (agent who brought it)');
+      const agent = await this.prisma.user.findUnique({ where: { id: body.broughtById } });
+      if (!agent || !agent.active) throw new BadRequestException('Brought-by agent not found or inactive');
+      broughtById = agent.id;
+      const resolved = await this.commissions.resolveForDeposit(agent.role, amount);
+      commissionPct = resolved.percent;
+      commissionAmt = resolved.amount;
+    }
 
     const tx = await this.prisma.transaction.create({
       data: {
@@ -65,16 +102,23 @@ export class TransactionsService {
         amount,
         method: method as any,
         requestedById: actor.sub,
+        broughtById,
+        commissionPct,
+        commissionAmt,
         idempotencyKey: body.idempotencyKey ?? null,
       },
       include: this.include,
     });
-    void this.audit.log({ action: `${kind} requested: ${amount} for ${client.name}`, actorId: actor.sub, actorName: actor.name, entity: 'transaction', entityId: tx.id });
+    void this.audit.log({
+      action: `${kind} requested: ${amount} for ${client.name}${broughtById ? ` (by ${tx.broughtBy?.name})` : ''}`,
+      actorId: actor.sub,
+      actorName: actor.name,
+      entity: 'transaction',
+      entityId: tx.id,
+    });
     return this.serialize(tx);
   }
 
-  /* Approve/reject inside a single DB transaction:
-     re-checks pending state and balance under lock, then moves money atomically. */
   async decide(actor: Actor, id: string, approve: boolean) {
     const result = await this.prisma.$transaction(async (db) => {
       const tx = await db.transaction.findUnique({ where: { id }, include: { client: true } });
