@@ -39,8 +39,8 @@ export class LeadsService {
         where,
         include: { assignedTo: { select: { id: true, name: true } }, comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { name: true } } } } },
         orderBy: { createdAt: 'desc' },
-        take: Math.min(Number(q.take) || 50, 200),
-        skip: Number(q.skip) || 0,
+        take: Math.min(Math.max(Number(q.take) || 50, 1), 2000),
+        skip: Math.max(Number(q.skip) || 0, 0),
       }),
       this.prisma.lead.count({ where }),
     ]);
