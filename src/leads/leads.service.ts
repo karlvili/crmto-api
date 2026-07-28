@@ -150,6 +150,36 @@ export class LeadsService {
     return { count };
   }
 
+  async remove(actor: Actor, id: string) {
+    const lead = await this.prisma.lead.findFirst({ where: { id, ...this.scopeFilter(actor) } });
+    if (!lead) throw new NotFoundException('Lead not found');
+    await this.prisma.lead.delete({ where: { id } });
+    void this.audit.log({
+      action: `Deleted lead ${lead.name}`,
+      actorId: actor.sub,
+      actorName: actor.name,
+      entity: 'lead',
+      entityId: id,
+    });
+    return { id, deleted: true };
+  }
+
+  async bulkDelete(actor: Actor, ids: string[] | undefined) {
+    if (!Array.isArray(ids) || ids.length === 0) throw new BadRequestException('ids required');
+    if (ids.length > 500) throw new BadRequestException('Max 500 leads per delete');
+    const unique = [...new Set(ids.map((id) => String(id)).filter(Boolean))];
+    const result = await this.prisma.lead.deleteMany({
+      where: { id: { in: unique }, ...this.scopeFilter(actor) },
+    });
+    void this.audit.log({
+      action: `Deleted ${result.count} leads`,
+      actorId: actor.sub,
+      actorName: actor.name,
+      entity: 'lead',
+    });
+    return { count: result.count };
+  }
+
   async convertToClient(actor: Actor, id: string) {
     const lead = await this.prisma.lead.findUnique({ where: { id } });
     if (!lead) throw new NotFoundException('Lead not found');

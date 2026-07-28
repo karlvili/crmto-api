@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { LeadsService } from './leads.service';
 import { RequirePermission } from '../auth/decorators';
 
@@ -31,10 +31,22 @@ export class LeadsController {
     return this.leads.shuffle(req.user, body);
   }
 
+  @Post('bulk-delete')
+  @RequirePermission('editLeads')
+  bulkDelete(@Req() req: any, @Body() body: { ids?: string[] }) {
+    return this.leads.bulkDelete(req.user, body?.ids);
+  }
+
   @Patch(':id')
   @RequirePermission('editLeads')
   update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     return this.leads.update(req.user, id, body);
+  }
+
+  @Delete(':id')
+  @RequirePermission('editLeads')
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.leads.remove(req.user, id);
   }
 
   @Post(':id/comments')
