@@ -94,20 +94,60 @@ export class LeadsService {
   async bulkImport(actor: Actor, rows: Array<{ name: string; phone?: string; email?: string; country?: string; source?: string }>) {
     if (!Array.isArray(rows) || rows.length === 0) throw new BadRequestException('rows must be a non-empty array');
     if (rows.length > 5000) throw new BadRequestException('Max 5000 rows per import');
+
+    const clean = (v: unknown, max: number) => {
+      if (v == null) return '';
+      const s = String(v).replace(/\u0000/g, '').trim();
+      return s.slice(0, max);
+    };
+
     const users = await this.prisma.user.findMany({ where: { active: true }, select: { id: true } });
+    const assigneeIds = users.map((u) => u.id);
+    const fallbackAssignee = actor.sub;
+
     const data = rows
-      .filter((r) => r?.name)
-      .map((r, i) => ({
-        name: String(r.name).slice(0, 120),
-        phone: String(r.phone ?? '').slice(0, 32),
-        email: String(r.email ?? '').slice(0, 160),
-        country: String(r.country ?? '').slice(0, 80),
-        source: String(r.source ?? 'Upload').slice(0, 60),
-        assignedToId: users[i % users.length]?.id,
-      }));
-    const result = await this.prisma.lead.createMany({ data });
-    void this.audit.log({ action: `Imported ${result.count} leads`, actorId: actor.sub, actorName: actor.name, entity: 'lead' });
-    return { count: result.count };
+      .map((r, i) => {
+        const name = clean(r?.name, 120);
+        if (!name) return null;
+        return {
+          name,
+          phone: clean(r?.phone, 32),
+          email: clean(r?.email, 160),
+          country: clean(r?.country, 80),
+          source: clean(r?.source, 60) || 'Upload',
+          assignedToId: assigneeIds.length ? assigneeIds[i % assigneeIds.length] : fallbackAssignee,
+        };
+      })
+      .filter(Boolean) as Array<{
+      name: string;
+      phone: string;
+      email: string;
+      country: string;
+      source: string;
+      assignedToId: string;
+    }>;
+
+    if (data.length === 0) throw new BadRequestException('No valid rows with a name to import');
+
+    let count = 0;
+    const chunkSize = 250;
+    try {
+      for (let i = 0; i < data.length; i += chunkSize) {
+        const chunk = data.slice(i, i + chunkSize);
+        const result = await this.prisma.lead.createMany({ data: chunk });
+        count += result.count;
+      }
+    } catch (e: any) {
+      throw new BadRequestException(e?.message || 'Import failed while saving leads');
+    }
+
+    void this.audit.log({
+      action: `Imported ${count} leads`,
+      actorId: actor.sub,
+      actorName: actor.name,
+      entity: 'lead',
+    });
+    return { count };
   }
 
   async convertToClient(actor: Actor, id: string) {

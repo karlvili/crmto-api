@@ -1,9 +1,13 @@
 import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Disable default body parser so we can raise the size limit for lead imports
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: '15mb' }));
+  app.use(urlencoded({ extended: true, limit: '15mb' }));
   app.use(cookieParser());
   const origins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
     .split(',')

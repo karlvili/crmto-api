@@ -18,6 +18,19 @@ export class LeadsController {
     return this.leads.queue(req.user);
   }
 
+  /* Static paths BEFORE :id routes so "import"/"shuffle" are never treated as ids */
+  @Post('import')
+  @RequirePermission('upload')
+  import(@Req() req: any, @Body() body: { rows: any[] }) {
+    return this.leads.bulkImport(req.user, body?.rows);
+  }
+
+  @Post('shuffle')
+  @RequirePermission('shuffle')
+  shuffle(@Req() req: any, @Body() body: any) {
+    return this.leads.shuffle(req.user, body);
+  }
+
   @Patch(':id')
   @RequirePermission('editLeads')
   update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
@@ -34,21 +47,9 @@ export class LeadsController {
     return this.leads.logCall(req.user, id, body);
   }
 
-  @Post('import')
-  @RequirePermission('upload')
-  import(@Req() req: any, @Body() body: { rows: any[] }) {
-    return this.leads.bulkImport(req.user, body?.rows);
-  }
-
   @Post(':id/convert')
   @RequirePermission('clients')
   convert(@Req() req: any, @Param('id') id: string) {
     return this.leads.convertToClient(req.user, id);
-  }
-
-  @Post('shuffle')
-  @RequirePermission('shuffle')
-  shuffle(@Req() req: any, @Body() body: any) {
-    return this.leads.shuffle(req.user, body);
   }
 }
