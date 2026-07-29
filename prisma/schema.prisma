@@ -107,6 +107,9 @@ model Lead {
   outcome     CallOutcome?
   assignedTo  User?        @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   assignedToId String?
+  // Set when converted — lead kept for history / activity (incl. deposits)
+  convertedClient   Client?  @relation("LeadConvertedClient", fields: [convertedClientId], references: [id], onDelete: SetNull)
+  convertedClientId String?  @unique
   lastContact DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -150,6 +153,7 @@ model Client {
 
   notes        ClientNote[]
   transactions Transaction[]
+  sourceLead   Lead?       @relation("LeadConvertedClient")
 
   @@index([assignedToId])
   @@index([kyc])

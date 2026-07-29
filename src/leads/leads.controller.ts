@@ -12,13 +12,13 @@ export class LeadsController {
     return this.leads.list(req.user, q);
   }
 
-  /* Call-center queue - any authenticated role, scoped to own leads unless viewAll */
+  /* Call-center queue - kept for compatibility */
   @Get('queue')
   queue(@Req() req: any) {
     return this.leads.queue(req.user);
   }
 
-  /* Static paths BEFORE :id routes so "import"/"shuffle" are never treated as ids */
+  /* Static paths BEFORE :id routes */
   @Post('import')
   @RequirePermission('upload')
   import(@Req() req: any, @Body() body: { rows: any[] }) {
@@ -35,6 +35,24 @@ export class LeadsController {
   @RequirePermission('editLeads')
   bulkDelete(@Req() req: any, @Body() body: { ids?: string[] }) {
     return this.leads.bulkDelete(req.user, body?.ids);
+  }
+
+  @Post('bulk-assign')
+  @RequirePermission('viewAll')
+  bulkAssign(@Req() req: any, @Body() body: { ids?: string[]; assignedToId?: string }) {
+    return this.leads.bulkAssign(req.user, body?.ids, body?.assignedToId);
+  }
+
+  @Get(':id/activity')
+  @RequirePermission('leadsList')
+  activity(@Req() req: any, @Param('id') id: string) {
+    return this.leads.activity(req.user, id);
+  }
+
+  @Get(':id')
+  @RequirePermission('leadsList')
+  getOne(@Req() req: any, @Param('id') id: string) {
+    return this.leads.getOne(req.user, id);
   }
 
   @Patch(':id')

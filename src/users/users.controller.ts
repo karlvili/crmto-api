@@ -16,7 +16,7 @@ export class UsersController {
      Handler-level permission overrides the class-level manageUsers,
      so RA/CM (editLeads) can call it too. */
   @Get('agents')
-  @RequirePermission('finance')
+  @RequirePermission('editLeads')
   agents() {
     return this.prisma.user.findMany({
       where: { active: true },
