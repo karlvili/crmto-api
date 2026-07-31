@@ -12,7 +12,16 @@ export class ClientsService {
 
   private serialize(c: any, actor: Actor) {
     const full = hasPermission(actor.role, 'fullPhone');
-    return { ...c, phone: full ? c.phone : maskPhone(c.phone), balance: toNum(c.balance), equity: toNum(c.equity) };
+    const { password: _pw, ...rest } = c;
+    return {
+      ...rest,
+      phone: full ? c.phone : maskPhone(c.phone),
+      balance: toNum(c.balance),
+      equity: toNum(c.equity),
+      hasPortalLogin: !!c.password,
+      platformName: c.platform?.name ?? null,
+      platformHost: c.platform?.host ?? c.registeredHost ?? '',
+    };
   }
 
   async create(
@@ -32,6 +41,7 @@ export class ClientsService {
       },
       include: {
         assignedTo: { select: { id: true, name: true } },
+        platform: { select: { id: true, name: true, host: true } },
         notes: true,
       },
     });
@@ -58,6 +68,7 @@ export class ClientsService {
       where,
       include: {
         assignedTo: { select: { id: true, name: true } },
+        platform: { select: { id: true, name: true, host: true } },
         notes: { orderBy: { createdAt: 'asc' }, include: { author: { select: { name: true } } } },
       },
       orderBy: { createdAt: 'desc' },

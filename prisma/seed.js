@@ -121,6 +121,18 @@ async function main() {
     }});
   }
 
+  const platforms = [
+    { name: 'Local Portal', host: 'localhost:5180' },
+    { name: 'Local Portal', host: 'localhost' },
+  ];
+  for (const p of platforms) {
+    await prisma.platform.upsert({
+      where: { host: p.host },
+      update: { name: p.name, active: true },
+      create: { name: p.name, host: p.host, active: true },
+    });
+  }
+
   await prisma.auditLog.create({ data: { action: 'Database seeded', actorName: 'system', entity: 'system' } });
   console.log('Seed complete.');
 }

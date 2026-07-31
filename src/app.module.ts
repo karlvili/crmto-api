@@ -10,6 +10,7 @@ import { ClientsModule } from './clients/clients.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { AffiliatesModule } from './affiliates/affiliates.module';
 import { CommissionsModule } from './commissions/commissions.module';
+import { PortalModule } from './portal/portal.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { CommissionsModule } from './commissions/commissions.module';
     TransactionsModule,
     AffiliatesModule,
     CommissionsModule,
+    PortalModule,
     HealthModule,
   ],
 })

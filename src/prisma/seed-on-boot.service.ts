@@ -29,5 +29,17 @@ export class SeedOnBootService implements OnModuleInit {
       });
     }
     this.log.log('Demo users ready (admin / admin123)');
+
+    // Local portal hosts for multi-domain registration tagging
+    for (const p of [
+      { name: 'Local Portal', host: 'localhost:5180' },
+      { name: 'Local Portal', host: 'localhost' },
+    ]) {
+      await this.prisma.platform.upsert({
+        where: { host: p.host },
+        update: { name: p.name, active: true },
+        create: { ...p, active: true },
+      });
+    }
   }
 }

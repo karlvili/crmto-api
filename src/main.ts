@@ -9,7 +9,7 @@ async function bootstrap() {
   app.use(json({ limit: '15mb' }));
   app.use(urlencoded({ extended: true, limit: '15mb' }));
   app.use(cookieParser());
-  const origins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+  const origins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://localhost:5175,http://localhost:5180')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);

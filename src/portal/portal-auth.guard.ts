@@ -1,38 +1,36 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { IS_PUBLIC_KEY } from './decorators';
+import { PORTAL_TOKEN_TYP } from './portal.constants';
 
-export interface JwtPayload { sub: string; role?: string; name?: string; typ?: string; email?: string; }
+export interface PortalJwtPayload {
+  sub: string;
+  typ: string;
+  name?: string;
+  email?: string;
+}
 
 @Injectable()
-export class JwtAuthGuard implements CanActivate {
+export class PortalAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [ctx.getHandler(), ctx.getClass()]);
-    if (isPublic) return true;
-
     const req = ctx.switchToHttp().getRequest();
     const header: string | undefined = req.headers['authorization'];
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) throw new UnauthorizedException('Missing access token');
 
     try {
-      const payload = await this.jwt.verifyAsync<JwtPayload>(token, {
+      const payload = await this.jwt.verifyAsync<PortalJwtPayload>(token, {
         secret: this.config.get<string>('JWT_ACCESS_SECRET'),
       });
-      // Portal client tokens cannot access staff CRM routes
-      if (payload.typ === 'client') {
-        throw new UnauthorizedException('Staff token required');
+      if (payload.typ !== PORTAL_TOKEN_TYP) {
+        throw new UnauthorizedException('Client token required');
       }
-      if (!payload.role) throw new UnauthorizedException('Invalid access token');
-      req.user = payload; // { sub, role }
+      req.client = payload;
       return true;
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;

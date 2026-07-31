@@ -136,18 +136,37 @@ model LeadComment {
   @@map("lead_comments")
 }
 
+model Platform {
+  id        String   @id @default(cuid())
+  name      String
+  host      String   @unique // e.g. trade.example.com
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients Client[]
+
+  @@map("platforms")
+}
+
 model Client {
   id           String      @id @default(cuid())
   name         String
   email        String      @default("")
   phone        String      @default("")
+  phoneCountry String      @default("") // ISO2 e.g. DE
   country      String      @default("")
+  // Portal login (null = staff-created, no self-serve login)
+  password     String?
   kyc          KycStatus   @default(PENDING)
   accountType  AccountType @default(STANDARD)
   balance      Decimal     @default(0) @db.Decimal(18, 2)
   equity       Decimal     @default(0) @db.Decimal(18, 2)
   assignedTo   User?       @relation("ClientAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   assignedToId String?
+  platform     Platform?   @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  platformId   String?
+  registeredHost String    @default("") // exact host at signup
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -157,6 +176,8 @@ model Client {
 
   @@index([assignedToId])
   @@index([kyc])
+  @@index([email])
+  @@index([platformId])
   @@map("clients")
 }
 
