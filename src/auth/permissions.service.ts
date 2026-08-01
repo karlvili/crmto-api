@@ -27,8 +27,14 @@ export class PermissionsService implements OnModuleInit {
   }
 
   async refresh() {
-    const rows = await this.prisma.rolePermission.findMany();
-    setEffectivePermissions(buildEffectiveFromOverrides(rows));
+    try {
+      const rows = await this.prisma.rolePermission.findMany();
+      setEffectivePermissions(buildEffectiveFromOverrides(rows));
+    } catch (err) {
+      // Don't crash boot if migration hasn't applied yet — use code defaults.
+      console.error('Failed to load role_permissions; using defaults', err);
+      setEffectivePermissions(buildEffectiveFromOverrides([]));
+    }
   }
 
   forRole(role: string) {
