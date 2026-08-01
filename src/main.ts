@@ -11,15 +11,34 @@ async function bootstrap() {
   app.use(cookieParser());
   const origins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://localhost:5175,http://localhost:5180')
     .split(',')
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/\/$/, ''))
     .filter(Boolean);
+
+  const originAllowed = (origin: string | undefined) => {
+    if (!origin) return true; // same-origin / curl / server-to-server
+    if (origins.includes('*') || origins.includes(origin)) return true;
+    try {
+      const host = new URL(origin).hostname;
+      // Local Vite apps
+      if (host === 'localhost' || host === '127.0.0.1') return true;
+      // DigitalOcean App Platform static/web apps (CRM + portal + future brands)
+      if (host.endsWith('.ondigitalocean.app')) return true;
+    } catch {
+      return false;
+    }
+    return false;
+  };
+
   app.enableCors({
-    origin: origins.length === 1 ? origins[0] : origins,
+    origin: (origin, callback) => {
+      if (originAllowed(origin)) callback(null, true);
+      else callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
     credentials: true,
   });
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`Crmto API running on http://localhost:${port}`);
-  console.log(`CORS origins: ${origins.join(', ')}`);
+  console.log(`CORS allowlist: ${origins.join(', ')} (+ localhost + *.ondigitalocean.app)`);
 }
 bootstrap();
