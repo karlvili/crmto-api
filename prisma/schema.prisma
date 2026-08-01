@@ -41,6 +41,11 @@ enum KycStatus {
   REJECTED  @map("Rejected")
 }
 
+enum KycDocType {
+  ID_PASSPORT    @map("ID / Passport")
+  BANK_STATEMENT @map("Bank Statement")
+}
+
 enum AccountType {
   STANDARD @map("Standard")
   GOLD     @map("Gold")
@@ -171,6 +176,7 @@ model Client {
   updatedAt    DateTime    @updatedAt
 
   notes        ClientNote[]
+  kycDocuments KycDocument[]
   transactions Transaction[]
   sourceLead   Lead?       @relation("LeadConvertedClient")
 
@@ -179,6 +185,23 @@ model Client {
   @@index([email])
   @@index([platformId])
   @@map("clients")
+}
+
+model KycDocument {
+  id           String     @id @default(cuid())
+  client       Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId     String
+  type         KycDocType
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  data         Bytes
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([clientId, type])
+  @@index([clientId])
+  @@map("kyc_documents")
 }
 
 model ClientNote {

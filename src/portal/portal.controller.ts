@@ -1,4 +1,17 @@
-import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Patch,
+  Post,
+  Req,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { Public } from '../auth/decorators';
 import { PortalService } from './portal.service';
@@ -121,5 +134,29 @@ export class PortalController {
   @Get('transactions')
   transactions(@Req() req: PortalReq) {
     return this.portal.transactions(req.client.sub);
+  }
+
+  @Public()
+  @UseGuards(PortalAuthGuard)
+  @Get('kyc/documents')
+  kycDocuments(@Req() req: PortalReq) {
+    return this.portal.listKycDocuments(req.client.sub);
+  }
+
+  @Public()
+  @UseGuards(PortalAuthGuard)
+  @Post('kyc/documents')
+  @HttpCode(201)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 8 * 1024 * 1024 },
+    }),
+  )
+  uploadKyc(
+    @Req() req: PortalReq,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { type?: string },
+  ) {
+    return this.portal.uploadKycDocument(req.client.sub, body?.type ?? '', file);
   }
 }

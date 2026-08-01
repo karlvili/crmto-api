@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { KycDocType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -16,6 +17,16 @@ import {
   PORTAL_TOKEN_TYP,
 } from './portal.constants';
 
+const KYC_DOC_TYPES = new Set<string>(Object.values(KycDocType));
+const MAX_KYC_BYTES = 8 * 1024 * 1024; // 8 MB
+const ALLOWED_KYC_MIME = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/jpg',
+]);
+
 @Injectable()
 export class PortalService {
   constructor(
@@ -24,6 +35,52 @@ export class PortalService {
     private readonly config: ConfigService,
     private readonly audit: AuditService,
   ) {}
+
+  private parseKycDocType(raw: string): KycDocType {
+    const v = String(raw || '').trim();
+    if (KYC_DOC_TYPES.has(v)) return v as KycDocType;
+    const upper = v.toUpperCase().replace(/[\s/-]+/g, '_');
+    if (upper === 'ID_PASSPORT' || upper === 'ID' || upper === 'PASSPORT') return KycDocType.ID_PASSPORT;
+    if (upper === 'BANK_STATEMENT' || upper === 'BANK_STATEMENTS') return KycDocType.BANK_STATEMENT;
+    throw new BadRequestException('type must be ID_PASSPORT or BANK_STATEMENT');
+  }
+
+  private serializeKycDoc(d: {
+    id: string;
+    type: KycDocType;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: d.id,
+      type: d.type,
+      originalName: d.originalName,
+      mimeType: d.mimeType,
+      sizeBytes: d.sizeBytes,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+    };
+  }
+
+  private async syncKycStatus(clientId: string) {
+    const client = await this.prisma.client.findUnique({ where: { id: clientId }, select: { kyc: true } });
+    if (!client || client.kyc === 'VERIFIED') return client?.kyc ?? null;
+
+    const docs = await this.prisma.kycDocument.findMany({
+      where: { clientId },
+      select: { type: true },
+    });
+    const types = new Set(docs.map((d) => d.type));
+    const complete = types.has(KycDocType.ID_PASSPORT) && types.has(KycDocType.BANK_STATEMENT);
+    const next = complete ? 'SUBMITTED' : client.kyc === 'REJECTED' ? 'REJECTED' : 'PENDING';
+    if (next !== client.kyc) {
+      await this.prisma.client.update({ where: { id: clientId }, data: { kyc: next } });
+    }
+    return next;
+  }
 
   private normalizeEmail(email: string) {
     return String(email || '')
@@ -86,7 +143,28 @@ export class PortalService {
       platform: c.platform
         ? { id: c.platform.id, name: c.platform.name, host: c.platform.host }
         : null,
+      kycDocuments: Array.isArray(c.kycDocuments)
+        ? c.kycDocuments.map((d: any) => this.serializeKycDoc(d))
+        : undefined,
       createdAt: c.createdAt,
+    };
+  }
+
+  private clientInclude() {
+    return {
+      platform: { select: { id: true, name: true, host: true } },
+      kycDocuments: {
+        select: {
+          id: true,
+          type: true,
+          originalName: true,
+          mimeType: true,
+          sizeBytes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: 'asc' as const },
+      },
     };
   }
 
@@ -138,7 +216,7 @@ export class PortalService {
         kyc: 'PENDING',
         accountType: 'STANDARD',
       },
-      include: { platform: { select: { id: true, name: true, host: true } } },
+      include: this.clientInclude(),
     });
 
     void this.audit.log({
@@ -166,7 +244,7 @@ export class PortalService {
 
     const client = await this.prisma.client.findFirst({
       where: { email: { equals: email, mode: 'insensitive' }, password: { not: null } },
-      include: { platform: { select: { id: true, name: true, host: true } } },
+      include: this.clientInclude(),
     });
     if (!client?.password) throw new UnauthorizedException('Invalid credentials');
     const ok = await bcrypt.compare(password, client.password);
@@ -198,7 +276,7 @@ export class PortalService {
     }
     const client = await this.prisma.client.findUnique({
       where: { id: payload.sub },
-      include: { platform: { select: { id: true, name: true, host: true } } },
+      include: this.clientInclude(),
     });
     if (!client?.password) throw new UnauthorizedException('Account not found');
     const accessToken = await this.signAccess({
@@ -212,7 +290,7 @@ export class PortalService {
   async me(clientId: string) {
     const client = await this.prisma.client.findUnique({
       where: { id: clientId },
-      include: { platform: { select: { id: true, name: true, host: true } } },
+      include: this.clientInclude(),
     });
     if (!client?.password) throw new UnauthorizedException('Account not found');
     return this.serializeClient(client);
@@ -253,11 +331,92 @@ export class PortalService {
       .update({
         where: { id: clientId },
         data,
-        include: { platform: { select: { id: true, name: true, host: true } } },
+        include: this.clientInclude(),
       })
       .catch(() => null);
     if (!client) throw new UnauthorizedException('Account not found');
     return this.serializeClient(client);
+  }
+
+  async listKycDocuments(clientId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, password: true, kyc: true },
+    });
+    if (!client?.password) throw new UnauthorizedException('Account not found');
+    const items = await this.prisma.kycDocument.findMany({
+      where: { clientId },
+      select: {
+        id: true,
+        type: true,
+        originalName: true,
+        mimeType: true,
+        sizeBytes: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return { kyc: client.kyc, items: items.map((d) => this.serializeKycDoc(d)) };
+  }
+
+  async uploadKycDocument(
+    clientId: string,
+    typeRaw: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number } | undefined,
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, password: true, kyc: true, name: true },
+    });
+    if (!client?.password) throw new UnauthorizedException('Account not found');
+    if (client.kyc === 'VERIFIED') {
+      throw new BadRequestException('KYC already verified — contact support to update documents');
+    }
+    if (!file?.buffer?.length) throw new BadRequestException('file required');
+    if (file.size > MAX_KYC_BYTES) throw new BadRequestException('File too large (max 8 MB)');
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (!ALLOWED_KYC_MIME.has(mime)) {
+      throw new BadRequestException('Only PDF, JPG, PNG, or WEBP files are allowed');
+    }
+    const type = this.parseKycDocType(typeRaw);
+
+    const doc = await this.prisma.kycDocument.upsert({
+      where: { clientId_type: { clientId, type } },
+      create: {
+        clientId,
+        type,
+        originalName: String(file.originalname || 'document').slice(0, 200),
+        mimeType: mime,
+        sizeBytes: file.size,
+        data: file.buffer,
+      },
+      update: {
+        originalName: String(file.originalname || 'document').slice(0, 200),
+        mimeType: mime,
+        sizeBytes: file.size,
+        data: file.buffer,
+      },
+      select: {
+        id: true,
+        type: true,
+        originalName: true,
+        mimeType: true,
+        sizeBytes: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const kyc = await this.syncKycStatus(clientId);
+    void this.audit.log({
+      action: `KYC upload: ${client.name} (${type})`,
+      entity: 'client',
+      entityId: clientId,
+      meta: { type: 'kyc_upload', docType: type, kyc },
+    });
+
+    return { document: this.serializeKycDoc(doc), kyc };
   }
 
   async changePassword(clientId: string, currentPassword: string, newPassword: string) {
