@@ -1,12 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
-import { PERMISSIONS } from '../auth/permissions';
+import { ROLES } from '../auth/permissions';
 import { toNum } from '../common/util';
 
 type Actor = { sub: string; role: string; name?: string };
-
-const ROLES = Object.keys(PERMISSIONS);
 
 @Injectable()
 export class CommissionsService {
@@ -33,7 +31,7 @@ export class CommissionsService {
     body: { role: string; minAmount: number; maxAmount?: number | null; percent: number },
   ) {
     const role = String(body?.role || '').toUpperCase();
-    if (!ROLES.includes(role)) throw new BadRequestException('Invalid role');
+    if (!(ROLES as readonly string[]).includes(role)) throw new BadRequestException('Invalid role');
     const minAmount = Number(body.minAmount);
     const percent = Number(body.percent);
     const maxRaw = body.maxAmount as number | null | undefined | '';

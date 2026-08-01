@@ -3,7 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { RequirePermission } from '../auth/decorators';
-import { PERMISSIONS } from '../auth/permissions';
+import { ROLES } from '../auth/permissions';
 
 const SAFE_SELECT = { id: true, username: true, name: true, role: true, active: true, createdAt: true };
 
@@ -34,7 +34,7 @@ export class UsersController {
   async create(@Req() req: any, @Body() body: { name: string; username: string; password: string; role: string }) {
     if (!body?.name || !body?.username || !body?.password) throw new BadRequestException('name, username, password required');
     if (body.password.length < 8) throw new BadRequestException('Password must be at least 8 characters');
-    if (!PERMISSIONS[body.role]) throw new BadRequestException('Invalid role');
+    if (!ROLES.includes(body.role as any)) throw new BadRequestException('Invalid role');
     const exists = await this.prisma.user.findUnique({ where: { username: body.username } });
     if (exists) throw new BadRequestException('Username already taken');
     const user = await this.prisma.user.create({

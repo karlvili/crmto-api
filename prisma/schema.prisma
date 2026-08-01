@@ -101,6 +101,17 @@ model User {
   @@map("users")
 }
 
+// Overrides vs DEFAULT_PERMISSIONS in code. Missing row = use default.
+model RolePermission {
+  role       Role
+  permission String
+  allowed    Boolean
+  updatedAt  DateTime @updatedAt
+
+  @@id([role, permission])
+  @@map("role_permissions")
+}
+
 model Lead {
   id          String       @id @default(cuid())
   name        String

@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
-import { PERMISSIONS } from './permissions';
+import { permissionsForRole } from './permissions';
 
 const ACCESS_TTL = '15m';
 const REFRESH_TTL = '7d';
@@ -44,7 +44,12 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, name: user.name, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        permissions: permissionsForRole(user.role),
+      },
     };
   }
 
@@ -61,7 +66,15 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user || !user.active) throw new UnauthorizedException('User not found or disabled');
     const accessToken = await this.signAccess({ sub: user.id, role: user.role, name: user.name });
-    return { accessToken, user: { id: user.id, name: user.name, role: user.role } };
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        permissions: permissionsForRole(user.role),
+      },
+    };
   }
 
   async me(userId: string) {
@@ -70,6 +83,6 @@ export class AuthService {
       select: { id: true, username: true, name: true, role: true, active: true, createdAt: true },
     });
     if (!user) throw new UnauthorizedException('User not found');
-    return { ...user, permissions: PERMISSIONS[user.role] ?? {} };
+    return { ...user, permissions: permissionsForRole(user.role) };
   }
 }
