@@ -25,7 +25,16 @@ const ALLOWED_KYC_MIME = new Set([
   'image/png',
   'image/webp',
   'image/jpg',
+  'application/octet-stream', // some browsers/OS leave mime empty/generic
 ]);
+
+const EXT_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
 
 @Injectable()
 export class PortalService {
@@ -373,12 +382,21 @@ export class PortalService {
     if (client.kyc === 'VERIFIED') {
       throw new BadRequestException('KYC already verified — contact support to update documents');
     }
-    if (!file?.buffer?.length) throw new BadRequestException('file required');
-    if (file.size > MAX_KYC_BYTES) throw new BadRequestException('File too large (max 8 MB)');
-    const mime = String(file.mimetype || '').toLowerCase();
-    if (!ALLOWED_KYC_MIME.has(mime)) {
+    const buffer = file?.buffer;
+    if (!buffer?.length) throw new BadRequestException('file required');
+    const size = file.size || buffer.length;
+    if (size > MAX_KYC_BYTES) throw new BadRequestException('File too large (max 8 MB)');
+
+    const originalName = String(file.originalname || 'document').slice(0, 200);
+    const ext = originalName.includes('.') ? originalName.split('.').pop()!.toLowerCase() : '';
+    let mime = String(file.mimetype || '').toLowerCase().trim();
+    if (!mime || mime === 'application/octet-stream') {
+      mime = EXT_MIME[ext] || mime;
+    }
+    if (!ALLOWED_KYC_MIME.has(mime) && !EXT_MIME[ext]) {
       throw new BadRequestException('Only PDF, JPG, PNG, or WEBP files are allowed');
     }
+    if (EXT_MIME[ext]) mime = EXT_MIME[ext];
     const type = this.parseKycDocType(typeRaw);
 
     const doc = await this.prisma.kycDocument.upsert({
@@ -386,16 +404,16 @@ export class PortalService {
       create: {
         clientId,
         type,
-        originalName: String(file.originalname || 'document').slice(0, 200),
+        originalName,
         mimeType: mime,
-        sizeBytes: file.size,
-        data: file.buffer,
+        sizeBytes: size,
+        data: buffer,
       },
       update: {
-        originalName: String(file.originalname || 'document').slice(0, 200),
+        originalName,
         mimeType: mime,
-        sizeBytes: file.size,
-        data: file.buffer,
+        sizeBytes: size,
+        data: buffer,
       },
       select: {
         id: true,

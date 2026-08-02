@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { Request, Response } from 'express';
 import { Public } from '../auth/decorators';
 import { PortalService } from './portal.service';
@@ -149,6 +150,7 @@ export class PortalController {
   @HttpCode(201)
   @UseInterceptors(
     FileInterceptor('file', {
+      storage: memoryStorage(),
       limits: { fileSize: 8 * 1024 * 1024 },
     }),
   )
@@ -158,5 +160,31 @@ export class PortalController {
     @Body() body: { type?: string },
   ) {
     return this.portal.uploadKycDocument(req.client.sub, body?.type ?? '', file);
+  }
+
+  /** JSON/base64 fallback when multipart is blocked by a proxy */
+  @Public()
+  @UseGuards(PortalAuthGuard)
+  @Post('kyc/documents/base64')
+  @HttpCode(201)
+  uploadKycBase64(
+    @Req() req: PortalReq,
+    @Body()
+    body: { type?: string; fileName?: string; mimeType?: string; dataBase64?: string },
+  ) {
+    const raw = String(body?.dataBase64 || '');
+    const b64 = raw.includes(',') ? raw.split(',').pop()! : raw;
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(b64, 'base64');
+    } catch {
+      buffer = Buffer.alloc(0);
+    }
+    return this.portal.uploadKycDocument(req.client.sub, body?.type ?? '', {
+      buffer,
+      originalname: body?.fileName || 'document',
+      mimetype: body?.mimeType || 'application/octet-stream',
+      size: buffer.length,
+    });
   }
 }
