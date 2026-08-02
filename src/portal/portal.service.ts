@@ -382,8 +382,8 @@ export class PortalService {
     if (client.kyc === 'VERIFIED') {
       throw new BadRequestException('KYC already verified — contact support to update documents');
     }
-    const buffer = file?.buffer;
-    if (!buffer?.length) throw new BadRequestException('file required');
+    if (!file?.buffer?.length) throw new BadRequestException('file required');
+    const buffer = file.buffer;
     const size = file.size || buffer.length;
     if (size > MAX_KYC_BYTES) throw new BadRequestException('File too large (max 8 MB)');
 
