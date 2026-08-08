@@ -156,7 +156,8 @@ export class PortalController {
   )
   uploadKyc(
     @Req() req: PortalReq,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile()
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
     @Body() body: { type?: string },
   ) {
     return this.portal.uploadKycDocument(req.client.sub, body?.type ?? '', file);
